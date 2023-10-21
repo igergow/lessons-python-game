@@ -5,6 +5,11 @@ from unique_names_generator.data import ADJECTIVES, STAR_WARS, NAMES
 from termcolor import colored
 from prettytable import PrettyTable
 
+MAX_ITEMS = 5
+MAX_CHANCE = 9
+HEALTH_PER_LEVEL = 100
+EXP_PER_LEVEL = 100
+
 def splash_screen():
   print('''
 ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬛⬛⬛⬛⬛⬛⬜⬜⬜⬜⬜⬜⬜
@@ -65,6 +70,15 @@ def print_item_found(hero_name, item_name, item_type):
     type_color = 'green' if item_type == 'defence' else 'magenta'
     print(colored(hero_name, 'blue') + " has found item " + colored(item_name, 'yellow') + " [" + colored(item_type, type_color) + "]")
 
+def generate_monster(level=1):
+    monster_name = get_random_name(combo=[ADJECTIVES, STAR_WARS])
+    monster_level = random_with_small_priority(level)
+    monster_health = monster_level * HEALTH_PER_LEVEL
+    monster_attack = monster_level * 10 - 5
+    monster_type = get_random_name(separator="-", style="lowercase")
+    monster = Monster(monster_name, monster_health, monster_attack, monster_type, level=monster_level)
+    return monster
+
 class Skill:
     def __init__(self, name, damage, level_required, blockable):
         self.name = name
@@ -108,13 +122,46 @@ ITEMS_POOL = [
     Item("Sword", 3, "attack"),
 ]
 
-
-class Hero:
+class Creator:
     def __init__(self, name, health, attack):
         self.name = name
-        self.default_health = health
         self.health = health
         self.attack = attack
+
+    def introduce_myself(self):
+        x = PrettyTable()
+        x.field_names = ["Property", "Value"]
+        x.add_row(["Name", self.name])
+        x.add_row(["Health", self.health])
+        x.add_row(["Attack", self.attack])
+        x.align["Property"] = "l"
+        x.align["Value"] = "l"
+        print(x)
+
+    def is_alive(self):
+        return self.health > 0
+
+    def print_health(self, name_color):
+        if self.health > 0:
+            print(f"{colored(self.name, name_color)} has {colored(str(self.health), 'green')} health")
+        else:
+            print(colored(f"{self.name} is dead", 'red'))
+
+    def perform_attack(self, opponent):
+        raise NotImplementedError("This method should be overridden by subclass")
+
+    def perform_damage_check(self, damage, is_double_attack, attacker_name, opponent_name):
+        if damage == 0:
+            if is_double_attack:
+                print(colored(f"{attacker_name} is unlucky 😔", 'blue'))
+            print(colored(f"{opponent_name} blocked our attack 🛡️", 'yellow'))
+            return False
+        return True
+
+class Hero(Creator):
+    def __init__(self, name, health, attack):
+        super().__init__(name, health, attack)
+        self.default_health = health
         self.level = 1
         self.skills = []
         self.items = []
@@ -122,33 +169,22 @@ class Hero:
         self.critical_strike_chance = 0.05
 
     def find_item(self):
-        if len(self.items) > 5:
+        if len(self.items) > MAX_ITEMS:
             return
 
-        chance = random.randint(0, 9)
-        if chance == 1:
-            item = ITEMS_POOL[0]
+        chance = random.randint(0, MAX_CHANCE)
+        
+        if chance in [1, 2]:
+            item = ITEMS_POOL[chance - 1]
             print_item_found(self.name, item.name, item.type)
-            self.items.append(ITEMS_POOL[0])
-        elif chance == 2:
-            item = ITEMS_POOL[0]
-            print_item_found(self.name, item.name, item.type)
-            self.items.append(ITEMS_POOL[1])
-
-    def is_alive(self):
-        return self.health > 0
+            self.items.append(item)
 
     def get_strongest_skill(self):
-        top_skill = self.skills[0]
-        for skill in self.skills:
-            if skill.damage > top_skill.damage:
-                top_skill = skill
-
-        return top_skill
+        return max(self.skills, key=lambda skill: skill.damage)
 
     def gain_xp(self, xp):
         self.xp += xp
-        if self.xp >= 100 * self.level:
+        if self.xp >= EXP_PER_LEVEL * self.level:
             self.level_up()
             self.xp = 0
 
@@ -220,32 +256,11 @@ class Hero:
 
     def perform_attack(self, opponent):
         damage, max_attack, is_double_attack = self.get_attack()
-        if damage == 0:
-            if is_double_attack:
-                print(colored(f"{self.name} is unlucky 😔", 'blue'))
-            print(colored(f"{opponent.name} blocked our attack 🛡️", 'yellow'))
+        if not self.perform_damage_check(damage, is_double_attack, self.name, opponent.name):
+            return
         else:
             opponent.health -= damage
             color_print(self.name, opponent.name, damage, is_double_attack)
-
-    def introduce_myself(self):
-        x = PrettyTable()
-
-        x.field_names = ["Property", "Value"]
-
-        x.add_row(["Name", self.name])
-        x.add_row(["Health", self.health])
-        x.add_row(["Attack", self.attack])
-        x.add_row(["Level", self.level])
-        x.align["Property"] = "l"
-        x.align["Value"] = "l"
-        print(x)
-
-    def print_health(self):
-        if self.health > 0:
-            print(f"{colored(self.name, 'blue')} has {colored(str(self.health), 'green')} health")
-        else:
-            print(colored(f"{self.name} is dead", 'red'))
 
     def level_up(self):
         self.level += 1
@@ -285,42 +300,27 @@ class Hero:
                 self.skills.append(skill)
                 print(f"{colored(self.name, 'red')} learned a new skill: {colored(skill.name, 'blue')} +{colored(str(skill.damage), 'green')} damage")
 
+    def print_health(self):
+        super().print_health('blue')
 
-class Monster:
-    def __init__(self, name, monster_type, health, attack, level=1):
-        self.name = name
+
+class Monster(Creator):
+    def __init__(self, name, health, attack, monster_type, level=1):
+        super().__init__(name, health, attack)
         self.type = monster_type
-        self.health = health
-        self.attack = attack
         self.level = level
 
     def perform_attack(self, opponent):
         damage = random.randint(0, self.attack)
-        if damage == 0:
-            print(colored(f"{opponent.name} blocked attack 🛡️", 'yellow'))
+
+        if not self.perform_damage_check(damage, False, self.name, opponent.name):
+            return
         else:
             opponent.health -= damage
             color_print(self.name, opponent.name, damage, is_reversed_colors=True)
 
-
-    def introduce_myself(self):
-        x = PrettyTable()
-
-        x.field_names = ["Property", "Value"]
-
-        x.add_row(["Name", self.name])
-        x.add_row(["Type", self.type])
-        x.add_row(["Health", self.health])
-        x.add_row(["Attack", self.attack])
-        x.align["Property"] = "l"
-        x.align["Value"] = "l"
-        print(x)
-        
     def print_health(self):
-      if self.health > 0:
-          print(f"{colored(self.name, 'red')} has {colored(str(self.health), 'green')} health")
-      else:
-          print(colored(f"{self.name} [{self.type}] is dead", 'red'))
+        super().print_health('red')
 
 
 def battle(hero, monster):
@@ -328,7 +328,6 @@ def battle(hero, monster):
     while should_start != 'y':
         should_start = input(colored("Do you want to start the battle? [y/n]: ", 'yellow'))
 
-    print("\033[H\033[J")
     print(colored(f"Battle started 🎉", 'green'))
     if hero.is_alive():
         hero.find_item()
@@ -346,10 +345,9 @@ def battle(hero, monster):
 
     print(colored(f"Battle finished 🎉", 'green'))
     if hero.health > 0:
-        hero.gain_xp(monster.level * 100)
+        hero.gain_xp(monster.level * EXP_PER_LEVEL)
         print(colored(f"{hero.name} is victorious 🥳", 'blue'))
         input(colored("Press enter to complete the battle...", 'yellow'))
-        print("\033[H\033[J")
     elif monster.health > 0:
         print(colored(f"{monster.name} [{monster.type}] is victorious 😈", 'red'))
 
@@ -359,13 +357,8 @@ hero = Hero("Rambo", 100, 10)
 i = 0
 while hero.is_alive() and i < 20:
     i += 1
-    monster_name = get_random_name(combo=[ADJECTIVES, STAR_WARS])
-    monster_level = random_with_small_priority(hero.level)
-    monster_health = monster_level * 100
-    monster_attack = monster_level * 10 - 5
-    monster_type = get_random_name(separator="-", style="lowercase")
-    monster = Monster(monster_name, monster_type, monster_health, monster_attack, level=monster_level)
+    monster = generate_monster(hero.level)
     print("\033[H\033[J")
-    print(colored(f"Monster {monster_name} found!", 'red'))
+    print(colored(f"Monster {monster.name} found!", 'red'))
     monster.introduce_myself()
     battle(hero, monster)
