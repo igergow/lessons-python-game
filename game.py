@@ -1,6 +1,8 @@
 import random
 import math
 import time
+from enum import Enum, auto
+from typing import Any
 from unique_names_generator import get_random_name
 from unique_names_generator.data import ADJECTIVES, STAR_WARS, NAMES
 from termcolor import colored
@@ -10,6 +12,9 @@ MAX_ITEMS = 5
 MAX_CHANCE = 9
 HEALTH_PER_LEVEL = 100
 EXP_PER_LEVEL = 100
+
+def padLine(length: int = 100, char: str = "-") -> str:
+    return print(colored(char * length, 'grey'))
 
 def splash_screen():
   print('''
@@ -67,10 +72,6 @@ def color_print(hero_name, opponent_name, damage, is_double_attack=False, is_rev
     else:
       print(colored(hero_name, 'blue') + ' attacked ' + colored(opponent_name, 'red') + ' with ' + colored(str(damage), 'yellow') + ' 😈' + crit_emoji)
 
-def print_item_found(hero_name, item_name, item_type):
-    type_color = 'green' if item_type == 'defence' else 'magenta'
-    print(colored(hero_name, 'blue') + " has found item " + colored(item_name, 'yellow') + " [" + colored(item_type, type_color) + "]")
-
 def generate_monster(level=1):
     monster_name = get_random_name(combo=[ADJECTIVES, STAR_WARS])
     monster_level = random_with_small_priority(level)
@@ -80,25 +81,46 @@ def generate_monster(level=1):
     monster = Monster(monster_name, monster_health, monster_attack, monster_type, level=monster_level)
     return monster
 
+def print_health_bar(name, current_health, max_health, max_bar_length=50, is_hero=True):
+    proportion = current_health / max_health
+    number_of_hashes = int(proportion * max_bar_length)
+    bar = '#' * number_of_hashes + '-' * (max_bar_length - number_of_hashes)
+    
+    max_name_length = 25
+    formatted_name = name.ljust(max_name_length)
+
+    color = 'blue' if is_hero else 'red'
+
+    health_text = colored("💀", 'red') if current_health<=0 else f"{current_health}/{max_health}"
+    
+    print(f"{colored(formatted_name, color)}: |{colored(bar, 'red')}| {health_text}")
+
 class Skill:
-    def __init__(self, name, damage, level_required, blockable):
+    LEVEL_UP_DAMAGE_INCREASE: float = 0.3
+
+    def __init__(self, name: str, damage: int, level_required: int, blockable: bool) -> None:
         self.name = name
         self.blockable = blockable
         self.damage = damage
         self.level = 1
         self.level_required = level_required
-        self.countdown = self.level_required + self.level
+        self.countdown = self._reset_countdown()
 
-    def is_available(self):
+    def is_available(self) -> bool:
         return self.countdown == 0
 
-    def reset_countdown(self):
+    def _reset_countdown(self) -> None:
         self.countdown = self.level_required + self.level
 
-    def level_up(self):
-        self.damage = self.damage + int(self.damage * 0.3)
+    def level_up(self) -> None:
+        self.damage = self.damage + int(self.damage * self.LEVEL_UP_DAMAGE_INCREASE)
         self.level += 1
-        self.reset_countdown()
+        self._reset_countdown()
+
+    def use(self) -> None:
+        self.countdown = self._reset_countdown()
+
+    def get_skill_info(self) -> None:
         print(f"The skill {colored(self.name, 'blue')} has {colored('leveled up', 'green')}! Damage {colored(self.damage, 'red')}, Level {colored(self.level, 'magenta')}")
 
 
@@ -108,19 +130,6 @@ SKILL_POOL = [
     Skill("Blade Dance", 35, 8, False),
     Skill("Arcane Nova", 45, 10, False),
     Skill("Void Rift", 65, 15, False),
-]
-
-
-class Item:
-    def __init__(self, name, value, type):
-        self.name = name
-        self.value = value
-        self.type = type
-
-
-ITEMS_POOL = [
-    Item("Healing Potion", 5, "defence"),
-    Item("Sword", 3, "attack"),
 ]
 
 class Creator:
@@ -177,7 +186,7 @@ class Hero(Creator):
         
         if chance in [1, 2]:
             item = ITEMS_POOL[chance - 1]
-            print_item_found(self.name, item.name, item.type)
+            item.found()
             self.items.append(item)
 
     def get_strongest_skill(self):
@@ -189,7 +198,7 @@ class Hero(Creator):
             self.level_up()
             self.xp = 0
 
-    def get_attack(self):
+    def get_attack(self) -> tuple:
         is_double_attack = False
         is_special_skill = False
         is_blockable = False
@@ -216,7 +225,7 @@ class Hero(Creator):
                 skill = self.skills[skill_choice]
                 is_blockable = skill.blockable
                 is_special_skill = True
-                skill.reset_countdown()
+                skill._reset_countdown()
                 print(f"{colored(self.name, 'blue')} has activated a special skill [{colored(skill.name, 'red')} +{skill.damage}] ({colored(f'Next to use {skill.countdown} turns', 'yellow')})")
                 bonus_attack += skill.damage
                 attack += skill.damage
@@ -291,6 +300,7 @@ class Hero(Creator):
       
       if 0 <= choice < len(self.skills):
           self.skills[choice].level_up()
+          self.skills[choice].get_skill_info()
           print(f"You've leveled up {colored(self.skills[choice].name, 'blue')}! 👊")
       else:
           print(colored("Invalid choice, no skills were leveled up.", 'red'))
@@ -310,6 +320,7 @@ class Monster(Creator):
         super().__init__(name, health, attack)
         self.type = monster_type
         self.level = level
+        self.default_health = health
 
     def perform_attack(self, opponent):
         damage = random.randint(0, self.attack)
@@ -347,21 +358,20 @@ def battle(hero, monster):
                 if userInput == 'q':
                     exit()
                 break
-
-        print(colored(f"--------------------------------------------------", 'grey'))
+        padLine()
         print(f"{colored('Turn', 'grey')} {colored(str(turn), 'cyan')}")
-        print(colored(f"--------------------------------------------------", 'grey'))
+        padLine()
         hero.use_item()
         hero.perform_attack(monster)
         if monster.health >= 0:
             monster.perform_attack(hero)
 
-        print(colored(f"--------------------------------------------------", 'grey'))
+        padLine()
         print(colored(f"Final results after this round", 'grey'))
-        print(colored(f"--------------------------------------------------", 'grey'))
-        monster.print_health()
-        hero.print_health()
-        print(colored(f"--------------------------------------------------", 'grey'))
+        padLine()
+        print_health_bar(hero.name, hero.health, hero.default_health)
+        print_health_bar(monster.name, monster.health, monster.default_health, is_hero=False)
+        padLine()
         print(f"\n\n")
 
     print(colored(f"Battle finished 🎉", 'green'))
@@ -371,6 +381,50 @@ def battle(hero, monster):
         input(colored("Press enter to complete the battle...", 'yellow'))
     elif monster.health > 0:
         print(colored(f"{monster.name} [{monster.type}] is victorious 😈", 'red'))
+
+
+class ItemType(Enum):
+    ATTACK = 1
+    DEFENCE = 2
+
+class Item:
+    def __init__(self, name: str, value: int, type: ItemType, count: int = 1) -> None:
+        # get_random_name from an array of prefixes (e.g. "Legendary", "Rare", "Epic", "Common")
+        prefix = get_random_name(combo=["Legendary", "Rare", "Epic", "Common"]) 
+
+        self.name = f"{prefix} {name}"
+        self.value = value
+        self.type = type
+        self.count = random.randint(1, count)
+    def is_type(self, type: ItemType) -> bool:
+        return self.type == type
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.type}) +{self.value} ({self.count})"
+
+    def use(self, hero: Hero) -> None:
+        if self.type == ItemType.ATTACK:
+            hero.attack += self.value
+        elif self.type == ItemType.DEFENCE:
+            hero.health += self.value
+        self.count -= 1
+        if self.count == 0 and ItemTypes.DEFENCE in hero.items:
+            hero.items.remove(self)
+
+    def drop(self, hero: Hero) -> None:
+        hero.items.remove(self)
+
+    def found(self) -> None:
+        type_color = 'green' if self.type == ItemType.DEFENCE else 'magenta'
+        # if self.type == ItemType.DEFENCE: get count of defence items else nothing
+        additional_info = f"Qty ({self.count})" if self.type == ItemType.DEFENCE else "ATTACK"
+        print(f"New item has been found {colored(self.name, 'yellow')} [{colored(additional_info, type_color)}]")
+
+
+ITEMS_POOL = [
+    Item("Healing Potion", 5, ItemType.DEFENCE, 5),
+    Item("Sword", 3, ItemType.ATTACK),
+]
 
 splash_screen()
 input(colored("Press enter to start the game...", 'yellow'))
