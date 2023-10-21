@@ -106,7 +106,10 @@ class Skill:
         return self.countdown == 0
 
     def recharge(self) -> None:
-        self.countdown -= 1
+        if self.countdown > 0:
+          self.countdown -= 1
+        else:
+          self.countdown = 0
 
     def _reset_countdown(self) -> None:
         self.countdown = self.level_required + self.level
@@ -188,29 +191,24 @@ class Hero(Creator):
         item.found()
 
         if item.type == ItemType.ATTACK:
-            # Ако героят няма текущо оръжие, го оборудва с новото.
             if not self.weapon_in_use:
                 self.use_weapon(item)
                 print(f"{colored(self.name, 'blue')} is equipped with {colored(item.name, 'yellow')}")
                 return
             
-            # Ако новото оръжие е по-силно от текущото:
             if item.value > self.weapon_in_use.value:
-                # Ако има оръжие в инвентара и новото оръжие е по-слабо от него, героят не го взема.
                 if self.get_strongest_weapon() and self.get_strongest_weapon().value > item.value:
                     print(f"{colored(self.name, 'blue')} found {colored(item.name, 'yellow')} but it's weaker than {colored(self.get_strongest_weapon().name, 'yellow')}")
                     return
-                # Ако няма оръжие в инвентара или новото оръжие е по-силно, героят го взема.
                 else:
                     if self.get_strongest_weapon():
                         self.items.remove(self.get_strongest_weapon())
-                    self.pick_item(self.weapon_in_use)  # Текущото оръжие се добавя в инвентара.
-                    self.use_weapon(item)  # Новото оръжие се оборудва.
+                    self.pick_item(self.weapon_in_use)  
+                    self.use_weapon(item)
                     print(f"{colored(self.name, 'blue')} is equipped with {colored(item.name, 'yellow')}")
-            # Ако новото оръжие е по-слабо от текущото, героят не го взема.
             else:
                 print(f"{colored(self.name, 'blue')} found {colored(item.name, 'yellow')} but it's weaker than {colored(self.weapon_in_use.name, 'yellow')}")
-        else:  # Ако предметът не е оръжие:
+        else: 
             self.pick_item(item)
             print(f"{colored(self.name, 'blue')} is equipped with {colored(item.name, 'yellow')}")
 
