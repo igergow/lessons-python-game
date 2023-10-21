@@ -1,5 +1,6 @@
 import random
 import math
+import time
 from unique_names_generator import get_random_name
 from unique_names_generator.data import ADJECTIVES, STAR_WARS, NAMES
 from termcolor import colored
@@ -335,13 +336,33 @@ def battle(hero, monster):
     turn = 0
     while hero.health > 0 and monster.health > 0:
         turn += 1
+
+        while True:
+            try:
+                time.sleep(2)
+                break
+            except KeyboardInterrupt:
+                # Pause until enter is pressed or q is pressed to quit
+                userInput = input(colored("Press enter to continue or q to quit: ", 'yellow'))
+                if userInput == 'q':
+                    exit()
+                break
+
+        print(colored(f"--------------------------------------------------", 'grey'))
         print(f"{colored('Turn', 'grey')} {colored(str(turn), 'cyan')}")
+        print(colored(f"--------------------------------------------------", 'grey'))
         hero.use_item()
         hero.perform_attack(monster)
-        monster.print_health()
         if monster.health >= 0:
             monster.perform_attack(hero)
-            hero.print_health()
+
+        print(colored(f"--------------------------------------------------", 'grey'))
+        print(colored(f"Final results after this round", 'grey'))
+        print(colored(f"--------------------------------------------------", 'grey'))
+        monster.print_health()
+        hero.print_health()
+        print(colored(f"--------------------------------------------------", 'grey'))
+        print(f"\n\n")
 
     print(colored(f"Battle finished 🎉", 'green'))
     if hero.health > 0:
