@@ -8,7 +8,7 @@ from unique_names_generator.data import ADJECTIVES, STAR_WARS, NAMES
 from termcolor import colored
 from prettytable import PrettyTable
 
-MAX_ITEMS = 5
+MAX_ITEMS = 3
 MAX_CHANCE = 3
 HEALTH_PER_LEVEL = 100
 EXP_PER_LEVEL = 100
@@ -68,10 +68,9 @@ def random_with_small_priority(max_value):
 def color_print(hero_name, opponent_name, damage, is_double_attack=False, is_reversed_colors=False, using_item=False):
     crit_emoji = ' ⚡ CRITICAL STRIKE' if is_double_attack else ''
     hero_name = hero_name if not using_item else f"🗡️ {hero_name}"
-    if is_reversed_colors:
-      print(colored(hero_name, 'red') + ' attacked ' + colored(opponent_name, 'blue') + ' with ' + colored(str(damage), 'yellow') + ' 😈' + crit_emoji)
-    else:
-      print(colored(hero_name, 'blue') + ' attacked ' + colored(opponent_name, 'red') + ' with ' + colored(str(damage), 'yellow') + ' 😈' + crit_emoji)
+    color = 'blue' if is_reversed_colors else 'red'
+    inversed_color = 'red' if is_reversed_colors else 'blue'
+    print(colored(hero_name, color) + ' attacked ' + colored(opponent_name, inversed_color) + ' with ' + colored(str(damage), 'yellow') + ' 😈' + crit_emoji)
 
 def generate_monster(level=1):
     monster_name = get_random_name(combo=[ADJECTIVES, STAR_WARS])
@@ -86,14 +85,10 @@ def print_health_bar(name, current_health, max_health, max_bar_length=50, is_her
     proportion = current_health / max_health
     number_of_hashes = int(proportion * max_bar_length)
     bar = '#' * number_of_hashes + '-' * (max_bar_length - number_of_hashes)
-    
     max_name_length = 25
     formatted_name = name.ljust(max_name_length)
-
     color = 'blue' if is_hero else 'red'
-
     health_text = colored("💀", 'red') if current_health<=0 else f"{current_health}/{max_health}"
-    
     print(f"{colored(formatted_name, color)}: |{colored(bar, 'red')}| {health_text}")
 
 class Skill:
@@ -179,24 +174,52 @@ class Hero(Creator):
         self.level = 1
         self.skills = []
         self.items = []
-        self.is_using_item = False
+        self.weapon_in_use = None
         self.xp = 0
         self.critical_strike_chance = 0.05
 
     def find_item(self):
         chance = random.randint(0, MAX_CHANCE)
         
-        if chance in [1, 2]:
-            item = ITEMS_POOL[chance - 1]
-            item.found()
-            # if the item found is ATTACK check if the hero have another attack item, then compare them. Drop the weaker and get the stronger
-            strongest = self.get_strongest_weapon()
-            if item.type == ItemType.ATTACK and len(self.items) > 0 and strongest.value > item.value:
-                print(f"{colored(self.name, 'blue')} found {colored(item.name, 'yellow')} but it's weaker than {colored(strongest.name, 'yellow')}")
+        if chance not in [1, 2]:
+            return
+        
+        item = ITEMS_POOL[chance - 1]
+        item.found()
+
+        if item.type == ItemType.ATTACK:
+            # Ако героят няма текущо оръжие, го оборудва с новото.
+            if not self.weapon_in_use:
+                self.use_weapon(item)
+                print(f"{colored(self.name, 'blue')} is equipped with {colored(item.name, 'yellow')}")
                 return
-            elif len(self.items) > 0 and item.type == ItemType.ATTACK:
-                strongest.drop(self)
+            
+            # Ако новото оръжие е по-силно от текущото:
+            if item.value > self.weapon_in_use.value:
+                # Ако има оръжие в инвентара и новото оръжие е по-слабо от него, героят не го взема.
+                if self.get_strongest_weapon() and self.get_strongest_weapon().value > item.value:
+                    print(f"{colored(self.name, 'blue')} found {colored(item.name, 'yellow')} but it's weaker than {colored(self.get_strongest_weapon().name, 'yellow')}")
+                    return
+                # Ако няма оръжие в инвентара или новото оръжие е по-силно, героят го взема.
+                else:
+                    if self.get_strongest_weapon():
+                        self.items.remove(self.get_strongest_weapon())
+                    self.pick_item(self.weapon_in_use)  # Текущото оръжие се добавя в инвентара.
+                    self.use_weapon(item)  # Новото оръжие се оборудва.
+                    print(f"{colored(self.name, 'blue')} is equipped with {colored(item.name, 'yellow')}")
+            # Ако новото оръжие е по-слабо от текущото, героят не го взема.
+            else:
+                print(f"{colored(self.name, 'blue')} found {colored(item.name, 'yellow')} but it's weaker than {colored(self.weapon_in_use.name, 'yellow')}")
+        else:  # Ако предметът не е оръжие:
             self.pick_item(item)
+            print(f"{colored(self.name, 'blue')} is equipped with {colored(item.name, 'yellow')}")
+
+
+    def use_weapon(self, item):
+        if self.weapon_in_use is None:
+            self.weapon_in_use = item
+            return
+
 
     def pick_item(self, item):
         if len(self.items) > MAX_ITEMS:
@@ -205,7 +228,10 @@ class Hero(Creator):
         self.items.append(item)
 
     def get_strongest_weapon(self):
-        return max(self.items, key=lambda item: item.value if item.type == ItemType.ATTACK else 0) if len(self.items) > 0 else None
+        if len(self.items) == 0:
+            return None
+        attack_items_only = list(filter(lambda item: item.type == ItemType.ATTACK, self.items))
+        return max(attack_items_only, key=lambda item: item.value if item.type == ItemType.ATTACK else 0)
 
     def get_strongest_skill(self):
         return max(self.skills, key=lambda skill: skill.damage)
@@ -246,8 +272,11 @@ class Hero(Creator):
                 print(f"{colored(self.name, 'blue')} has activated a special skill [{colored(skill.name, 'red')} +{skill.damage}] ({colored(f'Next to use {skill.countdown} turns', 'yellow')})")
                 bonus_attack += skill.damage
                 attack += skill.damage
+            else:
+                for skill in self.skills:
+                    skill.recharge()
         elif chance == 1 and not is_special_skill:
-            attack *= 1.3
+            attack *= 1.2
             attack = int(attack)
             is_double_attack = True
             print(colored(f"{self.name}", 'blue') + " has gained " + colored("double attack", 'red') + " " + colored(f"{attack}", 'yellow') + " 💪")
@@ -256,19 +285,27 @@ class Hero(Creator):
         if is_special_skill and not is_blockable:
             start = bonus_attack
 
+        if self.weapon_in_use is None:
+            print(f"{colored(self.name, 'blue')} is using bare hands")
+        else:
+            if self.weapon_in_use.durability > 0:
+                attack += self.weapon_in_use.value
+                start += self.weapon_in_use.value
+                self.weapon_in_use.durability -= 1
+                print(f"{colored(self.name, 'blue')} is using {colored(self.weapon_in_use.name, 'yellow')}")
+            else:
+                self.weapon_in_use.drop(self, True)
+                print(f"{colored(self.name, 'blue')} is using bare hands") 
+
         damage = random.randint(int(start), attack)
 
         return damage, attack, is_double_attack
 
     def use_item(self):
         for item in self.items:
-            if item.type == ItemType.ATTACK:
+            if item.type == ItemType.DEFENCE and self.health < int(self.default_health / 2):
                 item.use(self)
-                self.is_using_item = True
-                break
-            elif item.type == ItemType.DEFENCE and self.health < int(self.default_health / 2):
-                item.use(self)
-                break
+                return
 
     def perform_attack(self, opponent):
         damage, max_attack, is_double_attack = self.get_attack()
@@ -276,7 +313,7 @@ class Hero(Creator):
             return
         else:
             opponent.health -= damage
-            color_print(self.name, opponent.name, damage, is_double_attack)
+            color_print(self.name, opponent.name, damage, is_double_attack, using_item=self.weapon_in_use is not None)
 
     def level_up(self):
         self.level += 1
@@ -363,7 +400,7 @@ def battle(hero, monster):
 
         while True:
             try:
-                time.sleep(.5)
+                time.sleep(.2)
                 break
             except KeyboardInterrupt:
                 # Pause until enter is pressed or q is pressed to quit
@@ -443,29 +480,28 @@ class Item:
 
     def use(self, hero: Hero) -> None:
         if self.type == ItemType.ATTACK:
-            hero.attack += self.value
-            hero.in_use = True
-            self.durability -= 1
-            if self.durability == 0:
-                hero.attack -= int(self.value)
-                print(f"{colored(hero.name, 'blue')} is using {colored(self.name, 'yellow')} but it's broken")
-                self.drop(hero)
-                return
+            hero.weapon_in_use = self
+            self.remove(hero, True)
         elif self.type == ItemType.DEFENCE:
             hero.health += int(self.value)
             self.count -= 1
             if self.count == 0:
-                self.drop(hero)
+                self.remove(hero)
                 return
         print(f"{colored(hero.name, 'blue')} is using {colored(self.name, 'yellow')}")
 
     def is_in_use(self) -> bool:
         return self.in_use
 
-    def drop(self, hero: Hero) -> None:
+    def remove(self, hero: Hero, move_to_hand=False) -> None:
         hero.items.remove(self)
-        hero.is_using_item = False
-        print(f"{colored(hero.name, 'blue')} dropped {colored(self.name, 'yellow')}")
+        if not move_to_hand:
+            print(f"{colored(hero.name, 'blue')} removed {colored(self.name, 'yellow')} from inventory!")
+
+    def drop(self, hero: Hero, is_damaged=False) -> None:
+        hero.weapon_in_use = None
+        damaged_text = f" because it was ({colored('damaged', 'red')})" if is_damaged else ""
+        print(f"{colored(hero.name, 'blue')} dropped {colored(self.name, 'yellow')} ${damaged_text}")
 
     def found(self) -> None:
         type_color = 'green' if self.type == ItemType.DEFENCE else 'magenta'
